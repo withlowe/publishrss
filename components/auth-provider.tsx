@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from "react"
 import { useRouter, usePathname } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { createStore } from "tinybase"
@@ -23,31 +23,39 @@ type AuthContextType = {
 // Create context
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+// Helper function to check if we're in a browser environment
+const isBrowser = typeof window !== "undefined"
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const pathname = usePathname()
+  const isRedirecting = useRef(false)
+  const initialCheckDone = useRef(false)
 
   // Create a TinyBase store for authentication
   const store = useCreateStore(() => {
     const store = createStore()
 
-    // Initialize the auth table if it doesn't exist
-    if (!localStorage.getItem("auth-store")) {
-      store.setTable("users", {
-        admin: { username: "admin", passwordHash: hashPassword("admin"), isAdmin: true },
-      })
-      store.setCell("settings", "initialized", "initialized", true)
+    // Only access localStorage in browser environment
+    if (isBrowser) {
+      // Initialize the auth table if it doesn't exist
+      if (!localStorage.getItem("auth-store")) {
+        store.setTable("users", {
+          admin: { username: "admin", passwordHash: hashPassword("admin"), isAdmin: true },
+        })
+        store.setCell("settings", "initialized", "initialized", true)
 
-      // Save to localStorage
-      const serialized = store.getJson()
-      localStorage.setItem("auth-store", serialized)
-    } else {
-      // Load from localStorage
-      const serialized = localStorage.getItem("auth-store")
-      if (serialized) {
-        store.setJson(serialized)
+        // Save to localStorage
+        const serialized = store.getJson()
+        localStorage.setItem("auth-store", serialized)
+      } else {
+        // Load from localStorage
+        const serialized = localStorage.getItem("auth-store")
+        if (serialized) {
+          store.setJson(serialized)
+        }
       }
     }
 
@@ -67,18 +75,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check if user is logged in on initial load
   useEffect(() => {
+    if (initialCheckDone.current) return
+
     const checkAuth = () => {
-      const storedUser = localStorage.getItem("auth-user")
-      if (storedUser) {
-        try {
-          const parsedUser = JSON.parse(storedUser)
-          setUser(parsedUser)
-        } catch (error) {
-          console.error("Error parsing stored user:", error)
-          localStorage.removeItem("auth-user")
+      if (isBrowser) {
+        const storedUser = localStorage.getItem("auth-user")
+        if (storedUser) {
+          try {
+            const parsedUser = JSON.parse(storedUser)
+            setUser(parsedUser)
+          } catch (error) {
+            console.error("Error parsing stored user:", error)
+            localStorage.removeItem("auth-user")
+          }
         }
       }
       setIsLoading(false)
+      initialCheckDone.current = true
     }
 
     checkAuth()
@@ -86,21 +99,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Handle protected routes
   useEffect(() => {
-    if (!isLoading) {
+    if (isLoading || isRedirecting.current) return
+
+    const handleRouteProtection = async () => {
       // If not logged in and trying to access admin page, redirect to login
       if (!user && pathname?.startsWith("/admin")) {
-        router.push("/")
+        isRedirecting.current = true
+        await router.push("/")
+        setTimeout(() => {
+          isRedirecting.current = false
+        }, 100)
       }
 
       // If logged in and on login page, redirect to admin
       if (user && pathname === "/") {
-        router.push("/admin")
+        isRedirecting.current = true
+        await router.push("/admin")
+        setTimeout(() => {
+          isRedirecting.current = false
+        }, 100)
       }
     }
+
+    handleRouteProtection()
   }, [user, isLoading, pathname, router])
 
   // Login function
   const login = async (username: string, password: string) => {
+    if (isRedirecting.current) return
+
     setIsLoading(true)
 
     try {
@@ -128,10 +155,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(userData)
-      localStorage.setItem("auth-user", JSON.stringify(userData))
+      if (isBrowser) {
+        localStorage.setItem("auth-user", JSON.stringify(userData))
+      }
 
       // Redirect to admin page
-      router.push("/admin")
+      isRedirecting.current = true
+      await router.push("/admin")
+      setTimeout(() => {
+        isRedirecting.current = false
+      }, 100)
     } catch (error) {
       throw error
     } finally {
@@ -167,8 +200,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       store.setCell("users", user.username, "passwordHash", hashPassword(newPassword))
 
       // Save to localStorage
-      const serialized = store.getJson()
-      localStorage.setItem("auth-store", serialized)
+      if (isBrowser) {
+        const serialized = store.getJson()
+        localStorage.setItem("auth-store", serialized)
+      }
 
       return
     } catch (error) {
@@ -178,9 +213,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Logout function
   const logout = () => {
+    if (isRedirecting.current) return
+
     setUser(null)
-    localStorage.removeItem("auth-user")
+    if (isBrowser) {
+      localStorage.removeItem("auth-user")
+    }
+
+    isRedirecting.current = true
     router.push("/")
+    setTimeout(() => {
+      isRedirecting.current = false
+    }, 100)
   }
 
   // If still loading initial auth state, show loading indicator

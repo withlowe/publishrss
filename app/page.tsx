@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,9 @@ import { Loader2, Lock, LogIn } from "lucide-react"
 import { createStore } from "tinybase"
 import { useCreateStore } from "tinybase/ui-react"
 
+// Helper function to check if we're in a browser environment
+const isBrowser = typeof window !== "undefined"
+
 export default function LoginPage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
@@ -20,13 +23,15 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
   const router = useRouter()
+  const isRedirecting = useRef(false)
+  const initialCheckDone = useRef(false)
 
   // Create a TinyBase store for authentication
   const store = useCreateStore(() => {
     const store = createStore()
 
     // Initialize the auth table if it doesn't exist
-    if (!localStorage.getItem("auth-store")) {
+    if (isBrowser && !localStorage.getItem("auth-store")) {
       store.setTable("users", {
         admin: { username: "admin", passwordHash: hashPassword("admin"), isAdmin: true },
       })
@@ -35,7 +40,7 @@ export default function LoginPage() {
       // Save to localStorage
       const serialized = store.getJson()
       localStorage.setItem("auth-store", serialized)
-    } else {
+    } else if (isBrowser) {
       // Load from localStorage
       const serialized = localStorage.getItem("auth-store")
       if (serialized) {
@@ -47,13 +52,26 @@ export default function LoginPage() {
   })
 
   useEffect(() => {
+    // Only run this check once
+    if (initialCheckDone.current) return
+
     // Check if user is already logged in
-    const isLoggedIn = localStorage.getItem("auth-user")
-    if (isLoggedIn) {
-      router.push("/admin")
+    if (isBrowser) {
+      const isLoggedIn = localStorage.getItem("auth-user")
+      if (isLoggedIn && !isRedirecting.current) {
+        isRedirecting.current = true
+        router.push("/admin")
+        setTimeout(() => {
+          isRedirecting.current = false
+        }, 100)
+      } else {
+        setInitializing(false)
+      }
     } else {
       setInitializing(false)
     }
+
+    initialCheckDone.current = true
   }, [router])
 
   // Simple password hashing function (not secure for production)
@@ -69,6 +87,8 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isRedirecting.current) return
+
     setError(null)
     setLoading(true)
 
@@ -91,16 +111,22 @@ export default function LoginPage() {
       }
 
       // Set logged in user
-      localStorage.setItem(
-        "auth-user",
-        JSON.stringify({
-          username: user.username,
-          isAdmin: user.isAdmin,
-        }),
-      )
+      if (isBrowser) {
+        localStorage.setItem(
+          "auth-user",
+          JSON.stringify({
+            username: user.username,
+            isAdmin: user.isAdmin,
+          }),
+        )
+      }
 
       // Redirect to admin page
+      isRedirecting.current = true
       router.push("/admin")
+      setTimeout(() => {
+        isRedirecting.current = false
+      }, 100)
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred")
       setLoading(false)
@@ -125,7 +151,7 @@ export default function LoginPage() {
                 <Lock className="h-6 w-6 text-primary" />
               </div>
             </div>
-            <CardTitle className="text-2xl text-center">PublishRSS</CardTitle>
+            <CardTitle className="text-2xl text-center">Publishrss</CardTitle>
             <CardDescription className="text-center">Enter your credentials to access your feeds</CardDescription>
           </CardHeader>
           <CardContent>
@@ -158,7 +184,7 @@ export default function LoginPage() {
                 </Alert>
               )}
 
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full" disabled={loading || isRedirecting.current}>
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

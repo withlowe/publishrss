@@ -75,6 +75,9 @@ const INITIAL_FEED_ITEMS: FeedItem[] = [
   },
 ]
 
+// Helper function to check if we're in a browser environment
+const isBrowser = typeof window !== "undefined"
+
 // Create context
 const FeedContext = createContext<FeedContextType | undefined>(undefined)
 
@@ -88,25 +91,27 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   // Load data from localStorage on initial render
   useEffect(() => {
     try {
-      const savedFeeds = localStorage.getItem("rss-feeds")
-      const savedItems = localStorage.getItem("rss-items")
-      const savedTokens = localStorage.getItem("rss-private-tokens")
+      if (isBrowser) {
+        const savedFeeds = localStorage.getItem("rss-feeds")
+        const savedItems = localStorage.getItem("rss-items")
+        const savedTokens = localStorage.getItem("rss-private-tokens")
 
-      if (savedFeeds) {
-        setFeeds(JSON.parse(savedFeeds))
-      }
+        if (savedFeeds) {
+          setFeeds(JSON.parse(savedFeeds))
+        }
 
-      if (savedItems) {
-        setFeedItems(JSON.parse(savedItems))
-      }
+        if (savedItems) {
+          setFeedItems(JSON.parse(savedItems))
+        }
 
-      if (savedTokens) {
-        setPrivateTokens(JSON.parse(savedTokens))
-      } else {
-        // Generate a private token if none exists
-        const newToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-        setPrivateTokens({ default: newToken })
-        localStorage.setItem("rss-private-tokens", JSON.stringify({ default: newToken }))
+        if (savedTokens) {
+          setPrivateTokens(JSON.parse(savedTokens))
+        } else {
+          // Generate a private token if none exists
+          const newToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+          setPrivateTokens({ default: newToken })
+          localStorage.setItem("rss-private-tokens", JSON.stringify({ default: newToken }))
+        }
       }
     } catch (error) {
       console.error("Error loading data from localStorage:", error)
@@ -116,9 +121,11 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   // Save data to localStorage when it changes
   useEffect(() => {
     try {
-      localStorage.setItem("rss-feeds", JSON.stringify(feeds))
-      localStorage.setItem("rss-items", JSON.stringify(feedItems))
-      localStorage.setItem("rss-private-tokens", JSON.stringify(privateTokens))
+      if (isBrowser) {
+        localStorage.setItem("rss-feeds", JSON.stringify(feeds))
+        localStorage.setItem("rss-items", JSON.stringify(feedItems))
+        localStorage.setItem("rss-private-tokens", JSON.stringify(privateTokens))
+      }
     } catch (error) {
       console.error("Error saving data to localStorage:", error)
     }
@@ -237,6 +244,8 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
 
   // Export feeds as JSON
   const exportFeeds = () => {
+    if (!isBrowser) return
+
     const exportData = {
       feeds,
       items: feedItems.filter((item) => !item.isOwn), // Only export subscribed feeds
@@ -255,6 +264,8 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
 
   // Export posts as JSON
   const exportPosts = () => {
+    if (!isBrowser) return
+
     const exportData = {
       posts: feedItems.filter((item) => item.isOwn), // Only export your own posts
     }
@@ -272,6 +283,8 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
 
   // Export posts as Markdown
   const exportPostsAsMarkdown = async (includePrivate = true, includeFrontmatter = true) => {
+    if (!isBrowser) return
+
     try {
       // Dynamically import the TurndownService
       const { default: TurndownService } = await import("turndown")
@@ -334,6 +347,8 @@ private: ${post.isPrivate ? "true" : "false"}
 
   // Export all posts as a ZIP of Markdown files
   const exportPostsAsMarkdownZip = async (includePrivate = true, includeFrontmatter = true) => {
+    if (!isBrowser) return
+
     try {
       // Dynamically import the required libraries
       const [{ default: TurndownService }, { default: JSZip }] = await Promise.all([
@@ -613,12 +628,16 @@ private: ${post.isPrivate ? "true" : "false"}
 
   // Get your public feed's RSS URL
   const getYourFeedUrl = () => {
+    if (!isBrowser) return ""
+
     const host = window.location.host
     return `${window.location.protocol}//${host}/api/rss/your-feed`
   }
 
   // Get your private feed's RSS URL
   const getYourPrivateFeedUrl = () => {
+    if (!isBrowser) return ""
+
     const host = window.location.host
     const token =
       privateTokens.default || Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
