@@ -98,7 +98,7 @@ export default function AdminPage() {
                 <Card className="mt-6">
                   <CardHeader>
                     <CardTitle>User Information</CardTitle>
-                    <CardDescription>Your account details and session management</CardDescription>
+                    <CardDescription>Your account details</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-1">
@@ -110,8 +110,8 @@ export default function AdminPage() {
                       <p className="text-sm">{user.isAdmin ? "Administrator" : "User"}</p>
                     </div>
                     <div className="pt-2">
-                      <Button variant="destructive" onClick={logout} className="w-full">
-                        Log Out
+                      <Button variant="outline" onClick={logout} className="w-full">
+                        Reset User
                       </Button>
                     </div>
                   </CardContent>

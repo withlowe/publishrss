@@ -80,15 +80,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const checkAuth = () => {
       if (isBrowser) {
         const storedUser = localStorage.getItem("auth-user")
-        if (storedUser) {
+        if (!storedUser) {
+          // Auto-login as admin if no user is found
+          const userData = {
+            username: "admin",
+            isAdmin: true,
+          }
+          setUser(userData)
+          localStorage.setItem("auth-user", JSON.stringify(userData))
+        } else {
           try {
             const parsedUser = JSON.parse(storedUser)
             setUser(parsedUser)
           } catch (error) {
             console.error("Error parsing stored user:", error)
             localStorage.removeItem("auth-user")
+            // Auto-login as admin if there's an error
+            const userData = {
+              username: "admin",
+              isAdmin: true,
+            }
+            setUser(userData)
+            localStorage.setItem("auth-user", JSON.stringify(userData))
           }
         }
+      } else {
+        // Default user for SSR
+        setUser({
+          username: "admin",
+          isAdmin: true,
+        })
       }
       setIsLoading(false)
       initialCheckDone.current = true
@@ -97,80 +118,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth()
   }, [])
 
-  // Handle protected routes
+  // Handle routes
   useEffect(() => {
     if (isLoading || isRedirecting.current) return
 
-    const handleRouteProtection = async () => {
-      // If not logged in and trying to access admin page, redirect to login
-      if (!user && pathname?.startsWith("/admin")) {
-        isRedirecting.current = true
-        await router.push("/")
-        setTimeout(() => {
-          isRedirecting.current = false
-        }, 100)
-      }
-
-      // If logged in and on login page, redirect to admin
-      if (user && pathname === "/") {
-        isRedirecting.current = true
-        await router.push("/admin")
-        setTimeout(() => {
-          isRedirecting.current = false
-        }, 100)
-      }
-    }
-
-    handleRouteProtection()
-  }, [user, isLoading, pathname, router])
-
-  // Login function
-  const login = async (username: string, password: string) => {
-    if (isRedirecting.current) return
-
-    setIsLoading(true)
-
-    try {
-      // Simulate network delay
-      await new Promise((resolve) => setTimeout(resolve, 800))
-
-      // Get users from TinyBase store
-      const users = store.getTable("users")
-
-      // Check if user exists
-      const user = users[username]
-      if (!user) {
-        throw new Error("Invalid username or password")
-      }
-
-      // Check password
-      if (user.passwordHash !== hashPassword(password)) {
-        throw new Error("Invalid username or password")
-      }
-
-      // Set user in state and localStorage
-      const userData = {
-        username: user.username,
-        isAdmin: user.isAdmin,
-      }
-
-      setUser(userData)
-      if (isBrowser) {
-        localStorage.setItem("auth-user", JSON.stringify(userData))
-      }
-
-      // Redirect to admin page
+    // If on root path, redirect to admin
+    if (pathname === "/") {
       isRedirecting.current = true
-      await router.push("/admin")
+      router.push("/admin")
       setTimeout(() => {
         isRedirecting.current = false
       }, 100)
-    } catch (error) {
-      throw error
-    } finally {
-      setIsLoading(false)
     }
-  }
+  }, [isLoading, pathname, router])
 
   // Change password function
   const changePassword = async (currentPassword: string, newPassword: string) => {
@@ -211,24 +171,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Logout function
+  // Login function - kept for API compatibility
+  const login = async (username: string, password: string) => {
+    // This function is kept for API compatibility but is not used
+    return
+  }
+
+  // Logout function - just resets the user
   const logout = () => {
     if (isRedirecting.current) return
 
-    setUser(null)
+    // Instead of logging out, we'll just reset to admin
+    const userData = {
+      username: "admin",
+      isAdmin: true,
+    }
+    setUser(userData)
     if (isBrowser) {
-      localStorage.removeItem("auth-user")
+      localStorage.setItem("auth-user", JSON.stringify(userData))
     }
 
     isRedirecting.current = true
-    router.push("/")
+    router.push("/admin")
     setTimeout(() => {
       isRedirecting.current = false
     }, 100)
   }
 
   // If still loading initial auth state, show loading indicator
-  if (isLoading && pathname !== "/") {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
