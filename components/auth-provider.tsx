@@ -118,20 +118,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth()
   }, [])
 
-  // Handle routes
-  useEffect(() => {
-    if (isLoading || isRedirecting.current) return
-
-    // If on root path, redirect to admin
-    if (pathname === "/") {
-      isRedirecting.current = true
-      router.push("/admin")
-      setTimeout(() => {
-        isRedirecting.current = false
-      }, 100)
-    }
-  }, [isLoading, pathname, router])
-
   // Change password function
   const changePassword = async (currentPassword: string, newPassword: string) => {
     if (!user) {
@@ -192,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     isRedirecting.current = true
-    router.push("/admin")
+    router.push("/")
     setTimeout(() => {
       isRedirecting.current = false
     }, 100)
