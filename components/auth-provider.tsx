@@ -23,6 +23,26 @@ type AuthContextType = {
 // Create context
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+// Helper function to safely access localStorage
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(key)
+    }
+    return null
+  },
+  setItem: (key: string, value: string): void => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(key, value)
+    }
+  },
+  removeItem: (key: string): void => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(key)
+    }
+  },
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -35,21 +55,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const store = useCreateStore(() => {
     const store = createStore()
 
-    // Initialize the auth table if it doesn't exist
-    if (!localStorage.getItem("auth-store")) {
-      store.setTable("users", {
-        admin: { username: "admin", passwordHash: hashPassword("admin"), isAdmin: true },
-      })
-      store.setCell("settings", "initialized", "initialized", true)
+    // Only run this code in the browser
+    if (typeof window !== "undefined") {
+      // Initialize the auth table if it doesn't exist
+      if (!safeLocalStorage.getItem("auth-store")) {
+        store.setTable("users", {
+          admin: { username: "admin", passwordHash: hashPassword("admin"), isAdmin: true },
+        })
+        store.setCell("settings", "initialized", "initialized", true)
 
-      // Save to localStorage
-      const serialized = store.getJson()
-      localStorage.setItem("auth-store", serialized)
-    } else {
-      // Load from localStorage
-      const serialized = localStorage.getItem("auth-store")
-      if (serialized) {
-        store.setJson(serialized)
+        // Save to localStorage
+        const serialized = store.getJson()
+        safeLocalStorage.setItem("auth-store", serialized)
+      } else {
+        // Load from localStorage
+        const serialized = safeLocalStorage.getItem("auth-store")
+        if (serialized) {
+          store.setJson(serialized)
+        }
       }
     }
 
@@ -69,17 +92,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check if user is logged in on initial load
   useEffect(() => {
-    if (initialCheckDone.current) return
+    if (initialCheckDone.current || typeof window === "undefined") return
 
     const checkAuth = () => {
-      const storedUser = localStorage.getItem("auth-user")
+      const storedUser = safeLocalStorage.getItem("auth-user")
       if (storedUser) {
         try {
           const parsedUser = JSON.parse(storedUser)
           setUser(parsedUser)
         } catch (error) {
           console.error("Error parsing stored user:", error)
-          localStorage.removeItem("auth-user")
+          safeLocalStorage.removeItem("auth-user")
         }
       }
       setIsLoading(false)
@@ -91,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Handle protected routes
   useEffect(() => {
-    if (isLoading || redirectInProgress.current) return
+    if (isLoading || redirectInProgress.current || typeof window === "undefined") return
 
     const handleRouteProtection = () => {
       // If not logged in and trying to access admin page, redirect to login
@@ -147,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(userData)
-      localStorage.setItem("auth-user", JSON.stringify(userData))
+      safeLocalStorage.setItem("auth-user", JSON.stringify(userData))
 
       // Redirect to admin page
       redirectInProgress.current = true
@@ -191,7 +214,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Save to localStorage
       const serialized = store.getJson()
-      localStorage.setItem("auth-store", serialized)
+      safeLocalStorage.setItem("auth-store", serialized)
 
       return
     } catch (error) {
@@ -202,7 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Logout function
   const logout = () => {
     setUser(null)
-    localStorage.removeItem("auth-user")
+    safeLocalStorage.removeItem("auth-user")
     redirectInProgress.current = true
     router.push("/")
     setTimeout(() => {
@@ -211,7 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   // If still loading initial auth state, show loading indicator
-  if (isLoading && pathname !== "/") {
+  if (isLoading && pathname !== "/" && typeof window !== "undefined") {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

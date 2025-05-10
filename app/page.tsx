@@ -14,6 +14,21 @@ import { createStore } from "tinybase"
 import { useCreateStore } from "tinybase/ui-react"
 import { useAuth } from "@/components/auth-provider"
 
+// Helper function to safely access localStorage
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(key)
+    }
+    return null
+  },
+  setItem: (key: string, value: string): void => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(key, value)
+    }
+  },
+}
+
 export default function LoginPage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
@@ -27,21 +42,24 @@ export default function LoginPage() {
   const store = useCreateStore(() => {
     const store = createStore()
 
-    // Initialize the auth table if it doesn't exist
-    if (!localStorage.getItem("auth-store")) {
-      store.setTable("users", {
-        admin: { username: "admin", passwordHash: hashPassword("admin"), isAdmin: true },
-      })
-      store.setCell("settings", "initialized", "initialized", true)
+    // Only run this code in the browser
+    if (typeof window !== "undefined") {
+      // Initialize the auth table if it doesn't exist
+      if (!safeLocalStorage.getItem("auth-store")) {
+        store.setTable("users", {
+          admin: { username: "admin", passwordHash: hashPassword("admin"), isAdmin: true },
+        })
+        store.setCell("settings", "initialized", "initialized", true)
 
-      // Save to localStorage
-      const serialized = store.getJson()
-      localStorage.setItem("auth-store", serialized)
-    } else {
-      // Load from localStorage
-      const serialized = localStorage.getItem("auth-store")
-      if (serialized) {
-        store.setJson(serialized)
+        // Save to localStorage
+        const serialized = store.getJson()
+        safeLocalStorage.setItem("auth-store", serialized)
+      } else {
+        // Load from localStorage
+        const serialized = safeLocalStorage.getItem("auth-store")
+        if (serialized) {
+          store.setJson(serialized)
+        }
       }
     }
 
@@ -49,6 +67,9 @@ export default function LoginPage() {
   })
 
   useEffect(() => {
+    // Only run in browser environment
+    if (typeof window === "undefined") return
+
     // Check if user is already logged in - but don't redirect here
     // Let the AuthProvider handle redirects
     const checkAuth = () => {
@@ -85,7 +106,8 @@ export default function LoginPage() {
     }
   }
 
-  if (initializing || isLoading) {
+  // Only show loading indicator in browser environment
+  if ((initializing || isLoading) && typeof window !== "undefined") {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -93,8 +115,8 @@ export default function LoginPage() {
     )
   }
 
-  // If user is already logged in, don't show login form
-  if (user) {
+  // If user is already logged in, don't show login form (only in browser)
+  if (user && typeof window !== "undefined") {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
