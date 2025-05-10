@@ -17,6 +17,7 @@ import { FeedProvider } from "@/components/feed-context"
 import { useAuth } from "@/components/auth-provider"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import FeedRefreshButton from "@/components/feed-refresh-button"
 
 export default function AdminPage() {
   const { user, logout } = useAuth()
@@ -48,7 +49,10 @@ export default function AdminPage() {
           </div>
 
           <TabsContent value="reads">
-            <h2 className="text-xl font-semibold mb-4">Combined Feed</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Combined Feed</h2>
+              <FeedRefreshButton />
+            </div>
             <Suspense fallback={<FeedSkeleton />}>
               <FeedDisplay />
             </Suspense>
@@ -98,7 +102,7 @@ export default function AdminPage() {
                 <Card className="mt-6">
                   <CardHeader>
                     <CardTitle>User Information</CardTitle>
-                    <CardDescription>Your account details</CardDescription>
+                    <CardDescription>Your account details and session management</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-1">
@@ -110,8 +114,8 @@ export default function AdminPage() {
                       <p className="text-sm">{user.isAdmin ? "Administrator" : "User"}</p>
                     </div>
                     <div className="pt-2">
-                      <Button variant="outline" onClick={logout} className="w-full">
-                        Reset User
+                      <Button variant="destructive" onClick={logout} className="w-full">
+                        Log Out
                       </Button>
                     </div>
                   </CardContent>

@@ -9,7 +9,7 @@ import { AuthProvider } from "@/components/auth-provider"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Publishrss",
+  title: "PublishRSS",
   description: "Create and share your own RSS feeds",
     generator: 'v0.dev'
 }

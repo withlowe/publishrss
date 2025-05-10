@@ -23,39 +23,33 @@ type AuthContextType = {
 // Create context
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Helper function to check if we're in a browser environment
-const isBrowser = typeof window !== "undefined"
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const pathname = usePathname()
-  const isRedirecting = useRef(false)
+  const redirectInProgress = useRef(false)
   const initialCheckDone = useRef(false)
 
   // Create a TinyBase store for authentication
   const store = useCreateStore(() => {
     const store = createStore()
 
-    // Only access localStorage in browser environment
-    if (isBrowser) {
-      // Initialize the auth table if it doesn't exist
-      if (!localStorage.getItem("auth-store")) {
-        store.setTable("users", {
-          admin: { username: "admin", passwordHash: hashPassword("admin"), isAdmin: true },
-        })
-        store.setCell("settings", "initialized", "initialized", true)
+    // Initialize the auth table if it doesn't exist
+    if (!localStorage.getItem("auth-store")) {
+      store.setTable("users", {
+        admin: { username: "admin", passwordHash: hashPassword("admin"), isAdmin: true },
+      })
+      store.setCell("settings", "initialized", "initialized", true)
 
-        // Save to localStorage
-        const serialized = store.getJson()
-        localStorage.setItem("auth-store", serialized)
-      } else {
-        // Load from localStorage
-        const serialized = localStorage.getItem("auth-store")
-        if (serialized) {
-          store.setJson(serialized)
-        }
+      // Save to localStorage
+      const serialized = store.getJson()
+      localStorage.setItem("auth-store", serialized)
+    } else {
+      // Load from localStorage
+      const serialized = localStorage.getItem("auth-store")
+      if (serialized) {
+        store.setJson(serialized)
       }
     }
 
@@ -78,38 +72,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (initialCheckDone.current) return
 
     const checkAuth = () => {
-      if (isBrowser) {
-        const storedUser = localStorage.getItem("auth-user")
-        if (!storedUser) {
-          // Auto-login as admin if no user is found
-          const userData = {
-            username: "admin",
-            isAdmin: true,
-          }
-          setUser(userData)
-          localStorage.setItem("auth-user", JSON.stringify(userData))
-        } else {
-          try {
-            const parsedUser = JSON.parse(storedUser)
-            setUser(parsedUser)
-          } catch (error) {
-            console.error("Error parsing stored user:", error)
-            localStorage.removeItem("auth-user")
-            // Auto-login as admin if there's an error
-            const userData = {
-              username: "admin",
-              isAdmin: true,
-            }
-            setUser(userData)
-            localStorage.setItem("auth-user", JSON.stringify(userData))
-          }
+      const storedUser = localStorage.getItem("auth-user")
+      if (storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser)
+          setUser(parsedUser)
+        } catch (error) {
+          console.error("Error parsing stored user:", error)
+          localStorage.removeItem("auth-user")
         }
-      } else {
-        // Default user for SSR
-        setUser({
-          username: "admin",
-          isAdmin: true,
-        })
       }
       setIsLoading(false)
       initialCheckDone.current = true
@@ -118,44 +89,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkAuth()
   }, [])
 
-  // Change password function
-  const changePassword = async (currentPassword: string, newPassword: string) => {
-    if (!user) {
-      throw new Error("You must be logged in to change your password")
+  // Handle protected routes
+  useEffect(() => {
+    if (isLoading || redirectInProgress.current) return
+
+    const handleRouteProtection = () => {
+      // If not logged in and trying to access admin page, redirect to login
+      if (!user && pathname?.startsWith("/admin")) {
+        redirectInProgress.current = true
+        router.push("/")
+        // Reset the flag after a delay to prevent immediate re-triggering
+        setTimeout(() => {
+          redirectInProgress.current = false
+        }, 500)
+      }
+
+      // If logged in and on login page, redirect to admin
+      if (user && pathname === "/") {
+        redirectInProgress.current = true
+        router.push("/admin")
+        // Reset the flag after a delay to prevent immediate re-triggering
+        setTimeout(() => {
+          redirectInProgress.current = false
+        }, 500)
+      }
     }
 
-    try {
-      // Simulate network delay
-      await new Promise((resolve) => setTimeout(resolve, 800))
-
-      // Get users from TinyBase store
-      const users = store.getTable("users")
-
-      // Check if user exists
-      const userData = users[user.username]
-      if (!userData) {
-        throw new Error("User not found")
-      }
-
-      // Check current password
-      if (userData.passwordHash !== hashPassword(currentPassword)) {
-        throw new Error("Current password is incorrect")
-      }
-
-      // Update password
-      store.setCell("users", user.username, "passwordHash", hashPassword(newPassword))
-
-      // Save to localStorage
-      if (isBrowser) {
-        const serialized = store.getJson()
-        localStorage.setItem("auth-store", serialized)
-      }
-
-      return
-    } catch (error) {
-      throw error
-    }
-  }
+    handleRouteProtection()
+  }, [user, isLoading, pathname, router])
 
   // Login function
   const login = async (username: string, password: string) => {
@@ -186,9 +147,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(userData)
-      if (isBrowser) {
-        localStorage.setItem("auth-user", JSON.stringify(userData))
-      }
+      localStorage.setItem("auth-user", JSON.stringify(userData))
+
+      // Redirect to admin page
+      redirectInProgress.current = true
+      router.push("/admin")
+      setTimeout(() => {
+        redirectInProgress.current = false
+      }, 500)
     } catch (error) {
       throw error
     } finally {
@@ -196,17 +162,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Logout function
-  const logout = () => {
-    // Clear user data
-    setUser(null)
-    if (isBrowser) {
-      localStorage.removeItem("auth-user")
+  // Change password function
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!user) {
+      throw new Error("You must be logged in to change your password")
+    }
+
+    try {
+      // Simulate network delay
+      await new Promise((resolve) => setTimeout(resolve, 800))
+
+      // Get users from TinyBase store
+      const users = store.getTable("users")
+
+      // Check if user exists
+      const userData = users[user.username]
+      if (!userData) {
+        throw new Error("User not found")
+      }
+
+      // Check current password
+      if (userData.passwordHash !== hashPassword(currentPassword)) {
+        throw new Error("Current password is incorrect")
+      }
+
+      // Update password
+      store.setCell("users", user.username, "passwordHash", hashPassword(newPassword))
+
+      // Save to localStorage
+      const serialized = store.getJson()
+      localStorage.setItem("auth-store", serialized)
+
+      return
+    } catch (error) {
+      throw error
     }
   }
 
+  // Logout function
+  const logout = () => {
+    setUser(null)
+    localStorage.removeItem("auth-user")
+    redirectInProgress.current = true
+    router.push("/")
+    setTimeout(() => {
+      redirectInProgress.current = false
+    }, 500)
+  }
+
   // If still loading initial auth state, show loading indicator
-  if (isLoading) {
+  if (isLoading && pathname !== "/") {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

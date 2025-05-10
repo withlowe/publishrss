@@ -42,7 +42,9 @@ type FeedContextType = {
   getYourPosts: () => FeedItem[]
   getPublicPosts: () => FeedItem[]
   getPrivatePosts: () => FeedItem[]
+  refreshFeeds: () => Promise<number>
   isLoading: boolean
+  isRefreshing: boolean
 }
 
 // Initial sample data
@@ -75,9 +77,6 @@ const INITIAL_FEED_ITEMS: FeedItem[] = [
   },
 ]
 
-// Helper function to check if we're in a browser environment
-const isBrowser = typeof window !== "undefined"
-
 // Create context
 const FeedContext = createContext<FeedContextType | undefined>(undefined)
 
@@ -86,32 +85,31 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   const [feeds, setFeeds] = useState<Feed[]>(INITIAL_FEEDS)
   const [feedItems, setFeedItems] = useState<FeedItem[]>(INITIAL_FEED_ITEMS)
   const [isLoading, setIsLoading] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [privateTokens, setPrivateTokens] = useState<Record<string, string>>({})
 
   // Load data from localStorage on initial render
   useEffect(() => {
     try {
-      if (isBrowser) {
-        const savedFeeds = localStorage.getItem("rss-feeds")
-        const savedItems = localStorage.getItem("rss-items")
-        const savedTokens = localStorage.getItem("rss-private-tokens")
+      const savedFeeds = localStorage.getItem("rss-feeds")
+      const savedItems = localStorage.getItem("rss-items")
+      const savedTokens = localStorage.getItem("rss-private-tokens")
 
-        if (savedFeeds) {
-          setFeeds(JSON.parse(savedFeeds))
-        }
+      if (savedFeeds) {
+        setFeeds(JSON.parse(savedFeeds))
+      }
 
-        if (savedItems) {
-          setFeedItems(JSON.parse(savedItems))
-        }
+      if (savedItems) {
+        setFeedItems(JSON.parse(savedItems))
+      }
 
-        if (savedTokens) {
-          setPrivateTokens(JSON.parse(savedTokens))
-        } else {
-          // Generate a private token if none exists
-          const newToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-          setPrivateTokens({ default: newToken })
-          localStorage.setItem("rss-private-tokens", JSON.stringify({ default: newToken }))
-        }
+      if (savedTokens) {
+        setPrivateTokens(JSON.parse(savedTokens))
+      } else {
+        // Generate a private token if none exists
+        const newToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+        setPrivateTokens({ default: newToken })
+        localStorage.setItem("rss-private-tokens", JSON.stringify({ default: newToken }))
       }
     } catch (error) {
       console.error("Error loading data from localStorage:", error)
@@ -121,11 +119,9 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   // Save data to localStorage when it changes
   useEffect(() => {
     try {
-      if (isBrowser) {
-        localStorage.setItem("rss-feeds", JSON.stringify(feeds))
-        localStorage.setItem("rss-items", JSON.stringify(feedItems))
-        localStorage.setItem("rss-private-tokens", JSON.stringify(privateTokens))
-      }
+      localStorage.setItem("rss-feeds", JSON.stringify(feeds))
+      localStorage.setItem("rss-items", JSON.stringify(feedItems))
+      localStorage.setItem("rss-private-tokens", JSON.stringify(privateTokens))
     } catch (error) {
       console.error("Error saving data to localStorage:", error)
     }
@@ -191,6 +187,72 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Refresh all feeds
+  const refreshFeeds = async () => {
+    setIsRefreshing(true)
+    let newItemsCount = 0
+
+    try {
+      // Get all external feeds (exclude local/own feeds)
+      const externalFeeds = feeds.filter((feed) => feed.url !== "local")
+
+      // Process each feed
+      for (const feed of externalFeeds) {
+        try {
+          // Fetch the feed from our API route
+          const response = await fetch("/api/rss/fetch", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ url: feed.url }),
+          })
+
+          if (!response.ok) {
+            console.error(`Failed to refresh feed: ${feed.title}`)
+            continue
+          }
+
+          const feedData = await response.json()
+
+          // Process each item in the feed
+          for (const item of feedData.items) {
+            // Check if this item already exists (by title and link)
+            const existingItem = feedItems.find(
+              (existing) => existing.feedId === feed.id && existing.title === item.title && existing.link === item.link,
+            )
+
+            // If item doesn't exist, add it
+            if (!existingItem) {
+              const newItem: FeedItem = {
+                id: Math.random().toString(36).substring(2, 9),
+                feedId: feed.id,
+                feedTitle: feed.title,
+                title: item.title,
+                content: item.content,
+                link: item.link,
+                pubDate: item.pubDate,
+                isOwn: false,
+              }
+
+              setFeedItems((prev) => [newItem, ...prev])
+              newItemsCount++
+            }
+          }
+        } catch (error) {
+          console.error(`Error refreshing feed ${feed.title}:`, error)
+        }
+      }
+
+      return newItemsCount
+    } catch (error) {
+      console.error("Error refreshing feeds:", error)
+      throw error
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
   // Delete a feed
   const deleteFeed = (id: string) => {
     setFeeds((prev) => prev.filter((feed) => feed.id !== id))
@@ -244,8 +306,6 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
 
   // Export feeds as JSON
   const exportFeeds = () => {
-    if (!isBrowser) return
-
     const exportData = {
       feeds,
       items: feedItems.filter((item) => !item.isOwn), // Only export subscribed feeds
@@ -264,8 +324,6 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
 
   // Export posts as JSON
   const exportPosts = () => {
-    if (!isBrowser) return
-
     const exportData = {
       posts: feedItems.filter((item) => item.isOwn), // Only export your own posts
     }
@@ -283,8 +341,6 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
 
   // Export posts as Markdown
   const exportPostsAsMarkdown = async (includePrivate = true, includeFrontmatter = true) => {
-    if (!isBrowser) return
-
     try {
       // Dynamically import the TurndownService
       const { default: TurndownService } = await import("turndown")
@@ -347,8 +403,6 @@ private: ${post.isPrivate ? "true" : "false"}
 
   // Export all posts as a ZIP of Markdown files
   const exportPostsAsMarkdownZip = async (includePrivate = true, includeFrontmatter = true) => {
-    if (!isBrowser) return
-
     try {
       // Dynamically import the required libraries
       const [{ default: TurndownService }, { default: JSZip }] = await Promise.all([
@@ -628,16 +682,12 @@ private: ${post.isPrivate ? "true" : "false"}
 
   // Get your public feed's RSS URL
   const getYourFeedUrl = () => {
-    if (!isBrowser) return ""
-
     const host = window.location.host
     return `${window.location.protocol}//${host}/api/rss/your-feed`
   }
 
   // Get your private feed's RSS URL
   const getYourPrivateFeedUrl = () => {
-    if (!isBrowser) return ""
-
     const host = window.location.host
     const token =
       privateTokens.default || Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
@@ -679,7 +729,9 @@ private: ${post.isPrivate ? "true" : "false"}
         getYourPosts,
         getPublicPosts,
         getPrivatePosts,
+        refreshFeeds,
         isLoading,
+        isRefreshing,
       }}
     >
       {children}
