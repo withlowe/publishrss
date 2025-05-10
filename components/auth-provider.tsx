@@ -157,31 +157,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Login function - kept for API compatibility
+  // Login function
   const login = async (username: string, password: string) => {
-    // This function is kept for API compatibility but is not used
-    return
+    setIsLoading(true)
+
+    try {
+      // Simulate network delay
+      await new Promise((resolve) => setTimeout(resolve, 800))
+
+      // Get users from TinyBase store
+      const users = store.getTable("users")
+
+      // Check if user exists
+      const user = users[username]
+      if (!user) {
+        throw new Error("Invalid username or password")
+      }
+
+      // Check password
+      if (user.passwordHash !== hashPassword(password)) {
+        throw new Error("Invalid username or password")
+      }
+
+      // Set user in state and localStorage
+      const userData = {
+        username: user.username,
+        isAdmin: user.isAdmin,
+      }
+
+      setUser(userData)
+      if (isBrowser) {
+        localStorage.setItem("auth-user", JSON.stringify(userData))
+      }
+    } catch (error) {
+      throw error
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  // Logout function - just resets the user
+  // Logout function
   const logout = () => {
-    if (isRedirecting.current) return
-
-    // Instead of logging out, we'll just reset to admin
-    const userData = {
-      username: "admin",
-      isAdmin: true,
-    }
-    setUser(userData)
+    // Clear user data
+    setUser(null)
     if (isBrowser) {
-      localStorage.setItem("auth-user", JSON.stringify(userData))
+      localStorage.removeItem("auth-user")
     }
-
-    isRedirecting.current = true
-    router.push("/")
-    setTimeout(() => {
-      isRedirecting.current = false
-    }, 100)
   }
 
   // If still loading initial auth state, show loading indicator
