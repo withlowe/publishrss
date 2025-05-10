@@ -21,19 +21,21 @@ export async function GET(request: Request) {
 
     // Generate RSS XML
     const rssXml = `<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0">
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
 <channel>
   <title>Your Private PublishRSS Feed</title>
   <link>${process.env.NEXT_PUBLIC_APP_URL || "https://your-site.com"}</link>
   <description>Your private personal RSS feed</description>
+  <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
   ${userPosts
     .map(
       (post) => `
   <item>
     <title>${escapeXml(post.title)}${post.isPrivate ? " (Private)" : ""}</title>
-    <description><![CDATA[${post.content}]]></description>
+    <link>${process.env.NEXT_PUBLIC_APP_URL || "https://your-site.com"}/post/${post.id}</link>
+    <guid isPermaLink="false">${post.id}</guid>
     <pubDate>${new Date(post.pubDate).toUTCString()}</pubDate>
-    <guid>${post.id}</guid>
+    <content:encoded><![CDATA[${post.content}]]></content:encoded>
   </item>
   `,
     )
@@ -45,6 +47,9 @@ export async function GET(request: Request) {
     return new NextResponse(rssXml, {
       headers: {
         "Content-Type": "application/rss+xml; charset=utf-8",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
       },
     })
   } catch (error) {

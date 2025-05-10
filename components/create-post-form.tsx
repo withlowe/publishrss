@@ -55,17 +55,20 @@ export default function CreatePostForm() {
   return (
     <div className="space-y-4">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <TiptapEditor content={content} onChange={setContent} placeholder="Write your post content here..." />
-          <p className="text-sm text-muted-foreground">The first few words of your post will be used as the title.</p>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <Switch id="private-mode" checked={isPrivate} onCheckedChange={setIsPrivate} />
-          <Label htmlFor="private-mode" className="flex items-center gap-1.5 cursor-pointer">
-            <LockIcon className="h-3.5 w-3.5" />
-            Make this post private
-          </Label>
+        <div className="space-y-4">
+          <div className="h-[400px] border rounded-md overflow-hidden">
+            <TiptapEditor content={content} onChange={setContent} placeholder="Write your post content here..." />
+          </div>
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-muted-foreground">The first few words of your post will be used as the title.</p>
+            <div className="flex items-center space-x-2">
+              <Switch id="private-mode" checked={isPrivate} onCheckedChange={setIsPrivate} />
+              <Label htmlFor="private-mode" className="flex items-center gap-1.5 cursor-pointer">
+                <LockIcon className="h-3.5 w-3.5" />
+                Make this post private
+              </Label>
+            </div>
+          </div>
         </div>
 
         <Button type="submit" disabled={isSubmitting}>

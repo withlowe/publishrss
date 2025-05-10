@@ -30,6 +30,11 @@ type FeedContextType = {
   deletePost: (id: string) => void
   exportFeeds: () => void
   importFeeds: (jsonData: string) => void
+  exportPosts: () => void
+  importPosts: () => void
+  exportPostsAsMarkdown: (includePrivate: boolean, includeFrontmatter: boolean) => void
+  exportPostsAsMarkdownZip: (includePrivate: boolean, includeFrontmatter: boolean) => Promise<void>
+  importMarkdownPosts: (markdownContent: string, filename: string) => Promise<{ imported: number }>
   getYourFeedUrl: () => string
   getYourPrivateFeedUrl: () => string
   subscribeToYourFeed: () => Promise<void>
@@ -234,7 +239,7 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   const exportFeeds = () => {
     const exportData = {
       feeds,
-      items: feedItems.filter((item) => item.isOwn), // Only export your own posts
+      items: feedItems.filter((item) => !item.isOwn), // Only export subscribed feeds
     }
 
     const dataStr = JSON.stringify(exportData, null, 2)
@@ -246,6 +251,283 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     linkElement.setAttribute("href", dataUri)
     linkElement.setAttribute("download", exportFileDefaultName)
     linkElement.click()
+  }
+
+  // Export posts as JSON
+  const exportPosts = () => {
+    const exportData = {
+      posts: feedItems.filter((item) => item.isOwn), // Only export your own posts
+    }
+
+    const dataStr = JSON.stringify(exportData, null, 2)
+    const dataUri = `data:application/json;charset=utf-8,${encodeURIComponent(dataStr)}`
+
+    const exportFileDefaultName = `rss-posts-export-${new Date().toISOString().slice(0, 10)}.json`
+
+    const linkElement = document.createElement("a")
+    linkElement.setAttribute("href", dataUri)
+    linkElement.setAttribute("download", exportFileDefaultName)
+    linkElement.click()
+  }
+
+  // Export posts as Markdown
+  const exportPostsAsMarkdown = async (includePrivate = true, includeFrontmatter = true) => {
+    try {
+      // Dynamically import the TurndownService
+      const { default: TurndownService } = await import("turndown")
+      const turndownService = new TurndownService({
+        headingStyle: "atx",
+        codeBlockStyle: "fenced",
+        emDelimiter: "*",
+      })
+
+      // Get the posts to export
+      const postsToExport = feedItems.filter((item) => item.isOwn && (includePrivate || !item.isPrivate))
+
+      if (postsToExport.length === 0) {
+        throw new Error("No posts to export")
+      }
+
+      // Get the most recent post
+      const post = postsToExport[0]
+
+      // Convert HTML to Markdown
+      const markdown = turndownService.turndown(post.content)
+
+      // Create frontmatter if requested
+      let fileContent = ""
+      if (includeFrontmatter) {
+        fileContent += `---
+title: "${post.title.replace(/"/g, '\\"')}"
+date: ${new Date(post.pubDate).toISOString()}
+private: ${post.isPrivate ? "true" : "false"}
+---
+
+`
+      }
+
+      fileContent += markdown
+
+      // Create a safe filename
+      const safeTitle = post.title
+        .replace(/[^a-z0-9]/gi, "-")
+        .replace(/-+/g, "-")
+        .toLowerCase()
+      const dateStr = new Date(post.pubDate).toISOString().split("T")[0]
+      const filename = `${dateStr}-${safeTitle}.md`
+
+      // Download the file
+      const blob = new Blob([fileContent], { type: "text/markdown" })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error("Error exporting posts as markdown:", error)
+      throw error
+    }
+  }
+
+  // Export all posts as a ZIP of Markdown files
+  const exportPostsAsMarkdownZip = async (includePrivate = true, includeFrontmatter = true) => {
+    try {
+      // Dynamically import the required libraries
+      const [{ default: TurndownService }, { default: JSZip }] = await Promise.all([
+        import("turndown"),
+        import("jszip"),
+      ])
+
+      const turndownService = new TurndownService({
+        headingStyle: "atx",
+        codeBlockStyle: "fenced",
+        emDelimiter: "*",
+      })
+
+      // Get the posts to export
+      const postsToExport = feedItems.filter((item) => item.isOwn && (includePrivate || !item.isPrivate))
+
+      if (postsToExport.length === 0) {
+        throw new Error("No posts to export")
+      }
+
+      // Create a new ZIP file
+      const zip = new JSZip()
+
+      // Add each post as a markdown file
+      postsToExport.forEach((post) => {
+        // Convert HTML to Markdown
+        const markdown = turndownService.turndown(post.content)
+
+        // Create frontmatter if requested
+        let fileContent = ""
+        if (includeFrontmatter) {
+          fileContent += `---
+title: "${post.title.replace(/"/g, '\\"')}"
+date: ${new Date(post.pubDate).toISOString()}
+private: ${post.isPrivate ? "true" : "false"}
+---
+
+`
+        }
+
+        fileContent += markdown
+
+        // Create a safe filename
+        const safeTitle = post.title
+          .replace(/[^a-z0-9]/gi, "-")
+          .replace(/-+/g, "-")
+          .toLowerCase()
+        const dateStr = new Date(post.pubDate).toISOString().split("T")[0]
+        const filename = `${dateStr}-${safeTitle}.md`
+
+        // Add the file to the ZIP
+        zip.file(filename, fileContent)
+      })
+
+      // Generate the ZIP file
+      const content = await zip.generateAsync({ type: "blob" })
+
+      // Download the ZIP file
+      const url = URL.createObjectURL(content)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `posts-export-${new Date().toISOString().slice(0, 10)}.zip`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error("Error exporting posts as markdown zip:", error)
+      throw error
+    }
+  }
+
+  // Import markdown posts
+  const importMarkdownPosts = async (markdownContent: string, filename: string) => {
+    try {
+      // Check if it's a markdown file
+      if (!filename.toLowerCase().endsWith(".md")) {
+        return { imported: 0 }
+      }
+
+      // Parse frontmatter if present
+      let title = ""
+      let pubDate = new Date().toISOString()
+      let isPrivate = false
+      let content = markdownContent
+
+      // Check for frontmatter
+      const frontmatterMatch = markdownContent.match(/^---\s*\n([\s\S]*?)\n---\s*\n/)
+      if (frontmatterMatch) {
+        const frontmatter = frontmatterMatch[1]
+
+        // Extract title
+        const titleMatch = frontmatter.match(/title:\s*"?(.*?)"?\s*\n/)
+        if (titleMatch) {
+          title = titleMatch[1]
+        }
+
+        // Extract date
+        const dateMatch = frontmatter.match(/date:\s*(.*?)\s*\n/)
+        if (dateMatch) {
+          try {
+            pubDate = new Date(dateMatch[1]).toISOString()
+          } catch (e) {
+            // If date parsing fails, use current date
+            pubDate = new Date().toISOString()
+          }
+        }
+
+        // Extract private flag
+        const privateMatch = frontmatter.match(/private:\s*(true|false)\s*\n/)
+        if (privateMatch) {
+          isPrivate = privateMatch[1] === "true"
+        }
+
+        // Remove frontmatter from content
+        content = markdownContent.substring(frontmatterMatch[0].length)
+      }
+
+      // If no title was found in frontmatter, extract from filename
+      if (!title) {
+        // Try to extract title from filename (format: YYYY-MM-DD-title.md)
+        const filenameMatch = filename.match(/\d{4}-\d{2}-\d{2}-(.*?)\.md$/)
+        if (filenameMatch) {
+          title = filenameMatch[1].replace(/-/g, " ")
+          // Capitalize first letter of each word
+          title = title.replace(/\b\w/g, (l) => l.toUpperCase())
+        } else {
+          // Use filename without extension as title
+          title = filename.replace(/\.md$/, "").replace(/-/g, " ")
+        }
+      }
+
+      // Convert markdown to HTML
+      const { unified } = await import("unified")
+      const { default: remarkParse } = await import("remark-parse")
+      const { default: remarkRehype } = await import("remark-rehype")
+      const { default: rehypeStringify } = await import("rehype-stringify")
+
+      const processor = unified().use(remarkParse).use(remarkRehype).use(rehypeStringify)
+
+      const htmlContent = String(await processor.process(content))
+
+      // Check if this post already exists (by title and content similarity)
+      const isDuplicate = feedItems.some((item) => {
+        // Check if titles are similar
+        const titleSimilarity = item.title.toLowerCase() === title.toLowerCase()
+
+        // If titles match, check content similarity
+        if (titleSimilarity) {
+          // Simple content comparison - could be improved
+          const existingText = item.content.replace(/<[^>]*>/g, "").trim()
+          const newText = htmlContent.replace(/<[^>]*>/g, "").trim()
+
+          // Check if content is similar (more than 80% similar)
+          const maxLength = Math.max(existingText.length, newText.length)
+          let sameChars = 0
+          const minLength = Math.min(existingText.length, newText.length)
+
+          for (let i = 0; i < minLength; i++) {
+            if (existingText[i] === newText[i]) {
+              sameChars++
+            }
+          }
+
+          const similarity = sameChars / maxLength
+          return similarity > 0.8
+        }
+
+        return false
+      })
+
+      if (isDuplicate) {
+        return { imported: 0 }
+      }
+
+      // Create a new post
+      const newPost: FeedItem = {
+        id: Math.random().toString(36).substring(2, 9),
+        title,
+        feedTitle: isPrivate ? "Your Private Feed" : "Your Feed",
+        content: htmlContent,
+        pubDate,
+        isOwn: true,
+        isPrivate,
+      }
+
+      // Add the post
+      setFeedItems((prev) => [newPost, ...prev])
+
+      return { imported: 1 }
+    } catch (error) {
+      console.error("Error importing markdown post:", error)
+      throw error
+    }
   }
 
   // Import feeds from JSON
@@ -290,6 +572,45 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Import posts from JSON
+  const importPosts = (jsonData: string) => {
+    try {
+      const importedData = JSON.parse(jsonData)
+
+      if (importedData.posts && Array.isArray(importedData.posts)) {
+        // Import posts
+        let importedCount = 0
+
+        importedData.posts.forEach((importedPost: FeedItem) => {
+          // Check for duplicates by comparing title and content
+          const isDuplicate = feedItems.some(
+            (item) => item.title === importedPost.title && item.content === importedPost.content,
+          )
+
+          if (!isDuplicate) {
+            const newPost = {
+              ...importedPost,
+              id: Math.random().toString(36).substring(2, 9), // Generate new ID
+              isOwn: true, // Ensure it's marked as own
+              pubDate: importedPost.pubDate || new Date().toISOString(), // Use original date or current
+            }
+            setFeedItems((prev) => [newPost, ...prev])
+            importedCount++
+          }
+        })
+
+        if (importedCount === 0) {
+          throw new Error("No new posts to import (all posts already exist)")
+        }
+      } else {
+        throw new Error("No posts found in the import file")
+      }
+    } catch (error) {
+      console.error("Error importing posts:", error)
+      throw error
+    }
+  }
+
   // Get your public feed's RSS URL
   const getYourFeedUrl = () => {
     const host = window.location.host
@@ -327,6 +648,11 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
         deletePost,
         exportFeeds,
         importFeeds,
+        exportPosts,
+        importPosts,
+        exportPostsAsMarkdown,
+        exportPostsAsMarkdownZip,
+        importMarkdownPosts,
         getYourFeedUrl,
         getYourPrivateFeedUrl,
         subscribeToYourFeed,

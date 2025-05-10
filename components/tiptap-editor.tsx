@@ -94,7 +94,7 @@ export default function TiptapEditor({
   }
 
   return (
-    <div className="border rounded-md overflow-hidden">
+    <div className="h-full flex flex-col">
       <div className="bg-muted/50 p-2 flex flex-wrap gap-1 border-b">
         <Button
           type="button"
@@ -211,7 +211,12 @@ export default function TiptapEditor({
           </Button>
         </div>
       </div>
-      <EditorContent editor={editor} className="prose prose-sm dark:prose-invert max-w-none p-4 min-h-[200px]" />
+      <div className="flex-grow flex flex-col" onClick={() => editor.chain().focus().run()}>
+        <EditorContent
+          editor={editor}
+          className="prose prose-sm dark:prose-invert max-w-none p-4 flex-grow min-h-[300px] overflow-auto cursor-text"
+        />
+      </div>
     </div>
   )
 }
