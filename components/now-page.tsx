@@ -240,7 +240,7 @@ export default function NowPage() {
           <p className="mb-4">
             The NOW page concept was started by{" "}
             <a
-              href="https://sive.rs/nowff"
+              href="https://sive.rs/now2"
               target="_blank"
               rel="noopener noreferrer"
               className="text-blue-600 hover:underline flex items-center gap-1 inline-flex"
@@ -252,6 +252,24 @@ export default function NowPage() {
           <p>
             This generator creates a simple, clean NOW page based on your latest public posts. You can copy the HTML and
             host it anywhere.
+          </p>
+          <p>
+            Once you have your /now page up and running, go ahead and fill out this short <a
+              href="https://sive.rs/contact"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline flex items-center gap-1 inline-flex"
+            >
+              form<ExternalLink className="h-3 w-3" />
+            </a>, to get your site listed at <a
+              href="https://nownownow.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline flex items-center gap-1 inline-flex"
+            >
+              NOWNOWNOW<ExternalLink className="h-3 w-3" />
+            </a>.
+            
           </p>
         </CardContent>
       </Card>
